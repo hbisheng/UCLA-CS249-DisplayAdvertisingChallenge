@@ -27,9 +27,8 @@ def parsePoint(row):
         else:
             hash_val = (int(str(column), 16)) % BUCKET_SIZE # dumb hashing
             dict[hash_val] = 1
-
+            
     return LabeledPoint(row[0], SparseVector(BUCKET_SIZE, dict))
-
 
 # probability of p(y = 1 | x; w)
 def get_probability(wTx):
@@ -51,52 +50,61 @@ def trunc_float(f):
 def main():
     #Driver's Program
     #Setting up the standalone mode
+
+    TRAIN_INPUT_FILE = './train_100k.txt'
+    TEST_INPUT_FILE  = './test_with_id.txt'
+
+    TRAIN_OUTPUT_FILE = "./train_labels_and_scores"
+    TEST_OUTPUT_FILE  = "./test_score"
+    MODEL_OUTPUT_FILE = "./model_linear_regression"
+    LOGLOSS_OUTPUT_FILE = "./res_logloss"
+
+    # Be sure to backup!
+    shutil.rmtree(TRAIN_OUTPUT_FILE, ignore_errors=True)
+    shutil.rmtree(TEST_OUTPUT_FILE, ignore_errors=True)
+    shutil.rmtree(MODEL_OUTPUT_FILE, ignore_errors=True)
+    shutil.rmtree(LOGLOSS_OUTPUT_FILE, ignore_errors=True)
+
+    print datetime.datetime.now()
     conf = SparkConf().setMaster("local").setAppName("LogisticClassifer")
     sc = SparkContext(conf = conf)
 
-    #Set up dataframe
-    sqlContext = SQLContext(sc)
+    train_data = sc.textFile(TRAIN_INPUT_FILE).map( lambda p: p.split('\t') )
+    test_data  = sc.textFile(TEST_INPUT_FILE).map( lambda p: p.split('\t'))
 
-    # Read into Spark Dataframe
-    train_data = sqlContext.read.format('com.databricks.spark.csv').options(inferschema='true', delimiter="\t").load('./train.txt')
-    test_data  = sqlContext.read.format('com.databricks.spark.csv').options(inferschema='true', delimiter="\t").load('./test_with_id.txt')
-    
-    train_parsed = train_data.rdd.map(parsePoint);
-    test_parsed  = test_data.rdd.map(parsePoint)
+    train_parsed = train_data.map(parsePoint);
+    test_parsed  = test_data.map(parsePoint)
+
     model = LogisticRegressionWithSGD.train(train_parsed, iterations=100)
-    
-    #Print some weight and intercept, from logistic regression example
-    print("Final weights: " + str(model.weights))
-    print("Final intercept: " + str(model.intercept))
+    model.save(sc, MODEL_OUTPUT_FILE)
+
+    print "Model trained"
+    print datetime.datetime.now()
 
     #training_correct = train_parsed.map(lambda p: 1 if model.predict(p.features) == p.label else 0)
     #training_acc = training_correct.sum() * 1.0 / train_parsed.count()
     #print "training acc: " + str(training_acc)
     
-    shutil.rmtree("./train_labels_and_scores", ignore_errors=True)
-    shutil.rmtree("./test_score", ignore_errors=True)
-
     model.clearThreshold()
+
     train_parsed.map(
         lambda point: ( trunc_float(model.predict(point.features)), point.label, trunc_float(logloss(model.predict(point.features), point.label) ) )  ) \
-            .saveAsTextFile("./train_labels_and_scores")
+            .saveAsTextFile(TRAIN_OUTPUT_FILE)
 
-    print "Training Logloss: " + str(
-        train_parsed.map(
+    avg_logloss = train_parsed.map(
             lambda point: logloss(model.predict(point.features), point.label)
-            ).sum() / train_parsed.count())
+            ).sum() / train_parsed.count()
+
+    print "training logloss: " + str(avg_logloss)
+    sc.parallelize([avg_logloss]).repartition(1).saveAsTextFile(LOGLOSS_OUTPUT_FILE)
 
     test_parsed \
         .sortBy(lambda point: point.label) \
         .map(lambda point: str(int(point.label)) + "," + str(  get_probability(model.predict(point.features)))) \
-        .saveAsTextFile("./test_score")
+        .repartition(1) \
+        .saveAsTextFile(TEST_OUTPUT_FILE)
     
-    #MSE = valuesAndPreds.map(lambda (v, p): (v - p)**2).reduce(lambda x, y: x + y) / valuesAndPreds.count()
-    #print("Mean Squared Error = " + str(MSE))
-    #Convert back to dataframe
-    #valuesAndPreds.toDF;
-    #Output Result
-    
+    print datetime.datetime.now()
     sc.stop()
 
 if __name__ == "__main__": main()
