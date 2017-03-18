@@ -110,7 +110,7 @@ keys = ['I1','I2','I3','I4','I5','I6','I7','I8','I9','I10','I11','I12','I13','C1
 
 def main():
 
-    PREFIX = './'
+    PREFIX = '../data/'
     
     TRAIN_INPUT_FILE = PREFIX + 'train_100k.txt'
     LOGLOSS_OUTPUT_FILE = PREFIX + 'output'

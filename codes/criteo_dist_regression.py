@@ -144,7 +144,7 @@ def combine_model(model1_cnt, model2_cnt):
 
 def main():
 
-    PREFIX = './'
+    PREFIX = '../data/'
     
     TRAIN_INPUT_FILE = PREFIX + 'train_100k.txt'
     LOGLOSS_OUTPUT_FILE = PREFIX + 'output'
